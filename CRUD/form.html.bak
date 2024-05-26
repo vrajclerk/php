@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRUD Operations</title>
+</head>
+<body>
+
+<h2>Member Form</h2>
+<form method="POST" action="crud.php">
+    <input type="hidden" name="id" value="">
+    <label for="name">Name:</label>
+    <input type="text" id="name" name="name" required>
+    <br>
+    <label for="code">Code:</label>
+    <input type="text" id="code" name="code" required>
+    <br>
+    <label for="mobilnum">Mobile Number:</label>
+    <input type="text" id="mobilnum" name="mobilnum" required>
+    <br>
+    <input type="submit" name="action" value="Insert">
+    <input type="submit" name="action" value="Update">
+    <!-- <input type="submit" name="action" value="Delete"> -->
+</form>
+
+<h2>Member List</h2>
+<table border="1">
+    <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Code</th>
+        <th>Mobile Number</th>
+        <th>Action</th>
+    </tr>
+    <?php
+    include 'db.php';
+    $result = $conn->query("SELECT * FROM member");
+    while ($row = $result->fetch_assoc()) {
+        echo "<tr>";
+        echo "<td>{$row['id']}</td>";
+        echo "<td>{$row['name']}</td>";
+        echo "<td>{$row['code']}</td>";
+        echo "<td>{$row['mobilnum']}</td>";
+        echo "<td>
+                <form method='POST' action='crud.php'>
+                    <input type='hidden' name='id' value='{$row['id']}'>
+                    <input type='submit' name='action' value='Edit'>
+                </form>
+              </td>";
+        echo "</tr>";
+    }
+    ?>
+</table>
+
+</body>
+</html>
