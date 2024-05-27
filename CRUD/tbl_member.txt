@@ -1,0 +1,13 @@
+tbl_member
+id
+code 
+name 
+mobile 
+role_id
+
+
+
+tbl_role 
+id
+name 
+code 

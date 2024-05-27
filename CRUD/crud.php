@@ -12,6 +12,31 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
+// Create Role table if it doesn't exist
+$sql = "CREATE TABLE IF NOT EXISTS Role (
+    id INT(10) AUTO_INCREMENT PRIMARY KEY,
+    role_name VARCHAR(50) NOT NULL
+)";
+
+if ($conn->query($sql) === FALSE) {
+    die("Error creating table: " . $conn->error);
+}
+// Modify Member table to include a foreign key reference to Role
+// $sql = "ALTER TABLE Member ADD role_id INT(10), ADD FOREIGN KEY (role_id) REFERENCES Role(id)";
+
+// if ($conn->query($sql) === FALSE) {
+//     if ($conn->errno != 1060) { // Ignore error if column already exists
+//         die("Error modifying table: " . $conn->error);
+//     }
+// }
+
+
+// Insert some roles 
+$result = $conn->query("SELECT COUNT(*) as count FROM Role");
+$row = $result->fetch_assoc();
+if ($row['count'] == 0) {
+    $conn->query("INSERT INTO Role (role_name) VALUES ('Admin'), ('User'), ('Guest')");
+}
 // Create table if it doesn't exist
 $sql = "CREATE TABLE IF NOT EXISTS Member (
     id INT(10) AUTO_INCREMENT PRIMARY KEY,
@@ -28,6 +53,7 @@ $editId = '';
 $editName = '';
 $editCode = '';
 $editMobilenum = '';
+$editRoleId = '';
 $error = '';
 $success = '';
 
@@ -38,10 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $name = trim($_POST['name'] ?? '');
     $code = trim($_POST['code'] ?? '');
     $mobilenum = trim($_POST['mobilenum'] ?? '');
+    $role_id = isset($_POST['role_id']) ? intval($_POST['role_id']) : 0;
+
 
     if ($action == 'Insert' || $action == 'Update') {
         // Validate inputs
-        if (empty($name) || empty($code) || empty($mobilenum)) {
+        if (empty($name) || empty($code) || empty($mobilenum) || empty($role_id) ) {
             $error = 'All fields are required.';
         } elseif (!preg_match('/^[0-9]{10}$/', $mobilenum)) {
             $error = 'Mobile number must contain only digits and length must be 10.';
@@ -56,16 +84,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $error = "Error: Code '$code' is already in use. Please choose a different code.";
             } else {
                 if ($action == 'Insert') {
-                    $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum) VALUES (?, ?, ?)");
-                    $stmt->bind_param("sss", $name, $code, $mobilenum);
+                    $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum,role_id) VALUES (?, ?, ?, ?)");
+                    $stmt->bind_param("sssi", $name, $code, $mobilenum,$role_id);
                     if ($stmt->execute()) {
                         $success = 'New record created successfully';
                     } else {
                         $error = 'Error: ' . $stmt->error;
                     }
                 } elseif ($action == 'Update' && $id > 0) {
-                    $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ? WHERE id = ?");
-                    $stmt->bind_param("sssi", $name, $code, $mobilenum, $id);
+                    $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ?,role_id=? WHERE id = ?");
+                    $stmt->bind_param("sssii", $name, $code, $mobilenum, $id,$role_id);
                     if ($stmt->execute()) {
                         $success = 'Record updated successfully';
                     } else {
@@ -84,15 +112,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $error = 'Error: ' . $stmt->error;
         }
         $stmt->close();
+
     } elseif (isset($_POST['edit_id'])) {
         $editId = intval($_POST['edit_id']);
-        $stmt = $conn->prepare("SELECT id, name, code, mobilenum FROM Member WHERE id = ?");
+        $stmt = $conn->prepare("SELECT * FROM Member WHERE id = ?");
         $stmt->bind_param("i", $editId);
         $stmt->execute();
-        $stmt->bind_result($editId, $editName, $editCode, $editMobilenum);
-        $stmt->fetch();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $editId = $row['id'];
+            $editName = $row['name'];
+            $editCode = $row['code'];
+            $editMobilenum = $row['mobilenum'];
+            $editRoleId = $row['role_id'];
+        }
         $stmt->close();
     }
+}
+// Fetch roles for the dropdown
+$roles = [];
+$result = $conn->query("SELECT id, role_name FROM Role");
+while ($row = $result->fetch_assoc()) {
+    $roles[] = $row;
 }
 ?>
 
@@ -100,82 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html>
 <head>
     <title>CRUD Operations</title>
-    <!-- <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            max-width: 600px;
-            margin: 20px auto;
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        h2 {
-            color: #333;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            color: #666;
-        }
-        input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        input[type="submit"] {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        input[type="submit"]:hover {
-            background-color: #45a049;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        .action-buttons {
-            display: flex;
-            justify-content: space-between;
-        }
-        .action-buttons button {
-            background-color: #f44336;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-        .action-buttons button:hover {
-            background-color: #d32f2f;
-        }
-    </style> -->
-
 </head>
 <body>
 
@@ -184,46 +149,77 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 if (!empty($error)) {
     echo "<p style='color:red;'>$error</p>";
 }
-if (!empty($success)) {
-    echo "<p style='color:green;'>$success</p>";
-}
 ?>
 <form method="POST" action="">
     <input type="hidden" name="id" value="<?php echo htmlspecialchars($editId); ?>">
     <label for="name">Name:</label>
-<input type="text" id="name" name="name" value="<?php echo isset($_POST['name']) ? htmlspecialchars($_POST['name']) : htmlspecialchars($editName); ?>" required>
-<br>
-<label for="code">Code:</label>
-<input type="text" id="code" name="code" value="<?php echo isset($_POST['code']) ? htmlspecialchars($_POST['code']) : htmlspecialchars($editCode); ?>" required>
-<br>
-<label for="mobilenum">Mobile Number:</label>
-<input type="text" id="mobilenum" name="mobilenum" value="<?php echo isset($_POST['mobilenum']) ? htmlspecialchars($_POST['mobilenum']) : htmlspecialchars($editMobilenum); ?>" required pattern="\d{10}" title="Please enter a 10-digit mobile number.">
-
+    <input type="text" id="name" name="name" value="<?php echo htmlspecialchars($editName); ?>" required>
+    <br>
+    <label for="code">Code:</label>
+    <input type="text" id="code" name="code" value="<?php echo htmlspecialchars($editCode); ?>" required>
+    <br>
+    <label for="mobilenum">Mobile Number:</label>
+    <input type="text" id="mobilenum" name="mobilenum" value="<?php echo htmlspecialchars($editMobilenum); ?>" required pattern="\d{10}" title="Please enter a 10-digit mobile number.">
+    <br>
+    <label for="role_id">Role:</label>
+    <select id="role_id" name="role_id" required>
+        <option value="">Select Role</option>
+        <?php
+        $roles = $conn->query("SELECT id, role_name FROM Role");
+        while ($role = $roles->fetch_assoc()) {
+            $selected = ($role['id'] == $editRoleId) ? "selected" : "";
+            echo "<option value='" . htmlspecialchars($role['id']) . "' $selected>" . htmlspecialchars($role['role_name']) . "</option>";
+        }
+        ?> -->
+    </select>
     <br>
     <?php if (empty($editId)) { ?>
         <input type="submit" name="action" value="Insert">
     <?php } else { ?>
         <input type="submit" name="action" value="Update">
+        <!-- <input type="submit" name="action" value="Delete"> -->
     <?php } ?>
 </form>
 
 <h2>Member List</h2>
+<form method="GET" action="">
+    <label for="filter_role">Filter by Role:</label>
+    <select id="filter_role" name="filter_role" onchange="this.form.submit()">
+        <option value="">All Roles</option>
+        <?php
+        $roles = $conn->query("SELECT id, role_name FROM Role");
+        while ($role = $roles->fetch_assoc()) {
+            $selected = (isset($_GET['filter_role']) && $_GET['filter_role'] == $role['id']) ? "selected" : "";
+            echo "<option value='" . htmlspecialchars($role['id']) . "' $selected>" . htmlspecialchars($role['role_name']) . "</option>";
+        }
+        ?>
+    </select>
+</form>
 <table border="2">
     <tr>
         <th>ID</th>
         <th>Name</th>
         <th>Code</th>
         <th>Mobile Number</th>
+        <th>Role</th>
         <th>Action</th>
     </tr>
     <?php
-    $result = $conn->query("SELECT * FROM Member");
+    $filter_role = isset($_GET['filter_role']) ? intval($_GET['filter_role']) : 0;
+    $query = "SELECT Member.id, Member.name, Member.code, Member.mobilenum, Role.role_name 
+              FROM Member 
+              LEFT JOIN Role ON Member.role_id = Role.id";
+    if ($filter_role > 0) {
+        $query .= " WHERE Member.role_id = $filter_role";
+    }
+    $result = $conn->query($query);
     while ($row = $result->fetch_assoc()) {
         echo "<tr>";
-        echo "<td>" . htmlspecialchars($row['id']) . "</td>"; //convert special characters to entities
+        echo "<td>" . htmlspecialchars($row['id']) . "</td>";
         echo "<td>" . htmlspecialchars($row['name']) . "</td>";
         echo "<td>" . htmlspecialchars($row['code']) . "</td>";
         echo "<td>" . htmlspecialchars($row['mobilenum']) . "</td>";
+        echo "<td>" . htmlspecialchars($row['role_name']) . "</td>";
         echo "<td>
                 <form method='POST' action='' style='display:inline;'>
                     <input type='hidden' name='edit_id' value='" . htmlspecialchars($row['id']) . "'>
