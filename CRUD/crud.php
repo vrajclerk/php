@@ -29,29 +29,29 @@ $editName = '';
 $editCode = '';
 $editMobilenum = '';
 $error = '';
+$success = '';
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    if (isset($_POST['action'])) {
-        $action = $_POST['action'];
-        $id = isset($_POST['id']) ? intval($_POST['id']) : 0; //intval is used to convert string to integer
-        $name = isset($_POST['name']) ? trim($_POST['name']) : ''; //trim is used to remove white spaces
-        $code = isset($_POST['code']) ? trim($_POST['code']) : '';
-        $mobilenum = isset($_POST['mobilenum']) ? trim($_POST['mobilenum']) : '';
+    $action = $_POST['action'] ?? '';
+    $id = intval($_POST['id'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $code = trim($_POST['code'] ?? '');
+    $mobilenum = trim($_POST['mobilenum'] ?? '');
 
+    if ($action == 'Insert' || $action == 'Update') {
         // Validate inputs
         if (empty($name) || empty($code) || empty($mobilenum)) {
-            $error = "<script>alert('All fields are required.');</script>";
-        } elseif (!ctype_digit($mobilenum)) { 
-            $error = "<scrip>alert('Mobile number must contain only digits.');</script>";
+            $error = 'All fields are required.';
+        } elseif (!preg_match('/^[0-9]{10}$/', $mobilenum)) {
+            $error = 'Mobile number must contain only digits and length must be 10.';
         } else {
             // Check for duplicate code
             $stmt = $conn->prepare("SELECT id FROM Member WHERE code = ? AND id != ?");
-            $stmt->bind_param("si", $code, $id); // s=string, i=integer, d,b
+            $stmt->bind_param("si", $code, $id);
             $stmt->execute();
             $stmt->store_result();
-            
-            //determining if the query found any matching records in the database.
+
             if ($stmt->num_rows > 0) {
                 $error = "Error: Code '$code' is already in use. Please choose a different code.";
             } else {
@@ -59,51 +59,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum) VALUES (?, ?, ?)");
                     $stmt->bind_param("sss", $name, $code, $mobilenum);
                     if ($stmt->execute()) {
-                        echo "<script>alert('New record created successfully');</script>";
+                        $success = 'New record created successfully';
                     } else {
-                        $error = "<script>alert('Error:');</script>" . $stmt->error;
+                        $error = 'Error: ' . $stmt->error;
                     }
                 } elseif ($action == 'Update' && $id > 0) {
                     $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ? WHERE id = ?");
                     $stmt->bind_param("sssi", $name, $code, $mobilenum, $id);
                     if ($stmt->execute()) {
-                        echo "<script>alert('Record updated successfully');</script>";
+                        $success = 'Record updated successfully';
                     } else {
-                        $error = "<script>alert('Error:');". $stmt->error;
-                    }
-                } elseif ($action == 'Delete' && $id > 0) {
-                    $stmt = $conn->prepare("DELETE FROM Member WHERE id = ?");
-                    $stmt->bind_param("i", $id);
-                    if ($stmt->execute()) {
-                        echo "<script>alert('Record deleted successfully');</script>";
-                    } else {
-                        $error = "<script>alert('Error:');</script>" . $stmt->error;
+                        $error = 'Error: ' . $stmt->error;
                     }
                 }
             }
             $stmt->close();
         }
+    } elseif ($action == 'Delete' && $id > 0) {
+        $stmt = $conn->prepare("DELETE FROM Member WHERE id = ?");
+        $stmt->bind_param("i", $id);
+        if ($stmt->execute()) {
+            $success = 'Record deleted successfully';
+        } else {
+            $error = 'Error: ' . $stmt->error;
+        }
+        $stmt->close();
     } elseif (isset($_POST['edit_id'])) {
         $editId = intval($_POST['edit_id']);
-        $stmt = $conn->prepare("SELECT * FROM Member WHERE id = ?");
+        $stmt = $conn->prepare("SELECT id, name, code, mobilenum FROM Member WHERE id = ?");
         $stmt->bind_param("i", $editId);
         $stmt->execute();
-        $result = $stmt->get_result();
-        if ($row = $result->fetch_assoc()) {
-            $editId = $row['id'];
-            $editName = $row['name'];
-            $editCode = $row['code'];
-            $editMobilenum = $row['mobilenum'];
-        }
-        $stmt->close(); 
+        $stmt->bind_result($editId, $editName, $editCode, $editMobilenum);
+        $stmt->fetch();
+        $stmt->close();
     }
 }
 ?>
-
-
-
-
-
 
 <!DOCTYPE html>
 <html>
@@ -116,6 +107,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <?php
 if (!empty($error)) {
     echo "<p style='color:red;'>$error</p>";
+}
+if (!empty($success)) {
+    echo "<p style='color:green;'>$success</p>";
 }
 ?>
 <form method="POST" action="">
@@ -133,7 +127,6 @@ if (!empty($error)) {
         <input type="submit" name="action" value="Insert">
     <?php } else { ?>
         <input type="submit" name="action" value="Update">
-        <!-- <input type="submit" name="action" value="Delete"> -->
     <?php } ?>
 </form>
 
@@ -144,13 +137,13 @@ if (!empty($error)) {
         <th>Name</th>
         <th>Code</th>
         <th>Mobile Number</th>
-        <th >Action</th>
+        <th>Action</th>
     </tr>
     <?php
     $result = $conn->query("SELECT * FROM Member");
     while ($row = $result->fetch_assoc()) {
         echo "<tr>";
-        echo "<td>" . htmlspecialchars($row['id']) . "</td>";
+        echo "<td>" . htmlspecialchars($row['id']) . "</td>"; //convert special characters to entities
         echo "<td>" . htmlspecialchars($row['name']) . "</td>";
         echo "<td>" . htmlspecialchars($row['code']) . "</td>";
         echo "<td>" . htmlspecialchars($row['mobilenum']) . "</td>";
