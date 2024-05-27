@@ -1,4 +1,4 @@
-?php
+<?php
 $servername = "localhost";
 $username = "root";
 $password = "";
@@ -34,53 +34,52 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (isset($_POST['action'])) {
         $action = $_POST['action'];
-        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
-        $name = isset($_POST['name']) ? trim($_POST['name']) : '';
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0; //intval is used to convert string to integer
+        $name = isset($_POST['name']) ? trim($_POST['name']) : ''; //trim is used to remove white spaces
         $code = isset($_POST['code']) ? trim($_POST['code']) : '';
         $mobilenum = isset($_POST['mobilenum']) ? trim($_POST['mobilenum']) : '';
 
         // Validate inputs
-        if ($action == 'Insert') {
-            if (empty($name) || empty($code) || empty($mobilenum)) {
-                $error = "All fields are required.";
+        if (empty($name) || empty($code) || empty($mobilenum)) {
+            $error = "<script>alert('All fields are required.');</script>";
+        } elseif (!ctype_digit($mobilenum)) { 
+            $error = "<scrip>alert('Mobile number must contain only digits.');</script>";
+        } else {
+            // Check for duplicate code
+            $stmt = $conn->prepare("SELECT id FROM Member WHERE code = ? AND id != ?");
+            $stmt->bind_param("si", $code, $id); // s=string, i=integer, d,b
+            $stmt->execute();
+            $stmt->store_result();
+            
+            //determining if the query found any matching records in the database.
+            if ($stmt->num_rows > 0) {
+                $error = "Error: Code '$code' is already in use. Please choose a different code.";
             } else {
-                $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum) VALUES (?, ?, ?)");
-                $stmt->bind_param("sss", $name, $code, $mobilenum);
-                if ($stmt->execute()) {
-                    echo "New record created successfully";
-                } else {
-                    if ($stmt->errno == 1062) {
-                        $error = "Error: Code must be unique.";
+                if ($action == 'Insert') {
+                    $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum) VALUES (?, ?, ?)");
+                    $stmt->bind_param("sss", $name, $code, $mobilenum);
+                    if ($stmt->execute()) {
+                        echo "<script>alert('New record created successfully');</script>";
                     } else {
-                        $error = "Error: " . $stmt->error;
+                        $error = "<script>alert('Error:');</script>" . $stmt->error;
+                    }
+                } elseif ($action == 'Update' && $id > 0) {
+                    $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ? WHERE id = ?");
+                    $stmt->bind_param("sssi", $name, $code, $mobilenum, $id);
+                    if ($stmt->execute()) {
+                        echo "<script>alert('Record updated successfully');</script>";
+                    } else {
+                        $error = "<script>alert('Error:');". $stmt->error;
+                    }
+                } elseif ($action == 'Delete' && $id > 0) {
+                    $stmt = $conn->prepare("DELETE FROM Member WHERE id = ?");
+                    $stmt->bind_param("i", $id);
+                    if ($stmt->execute()) {
+                        echo "<script>alert('Record deleted successfully');</script>";
+                    } else {
+                        $error = "<script>alert('Error:');</script>" . $stmt->error;
                     }
                 }
-                $stmt->close();
-            }
-        } elseif ($action == 'Update' && $id > 0) {
-            if (empty($name) || empty($code) || empty($mobilenum)) {
-                $error = "All fields are required.";
-            } else {
-                $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ? WHERE id = ?");
-                $stmt->bind_param("sssi", $name, $code, $mobilenum, $id);
-                if ($stmt->execute()) {
-                    echo "Record updated successfully";
-                } else {
-                    if ($stmt->errno == 1062) {
-                        $error = "Error: Code must be unique.";
-                    } else {
-                        $error = "Error: " . $stmt->error;
-                    }
-                }
-                $stmt->close();
-            }
-        } elseif ($action == 'Delete' && $id > 0) {
-            $stmt = $conn->prepare("DELETE FROM Member WHERE id = ?");
-            $stmt->bind_param("i", $id);
-            if ($stmt->execute()) {
-                echo "Record deleted successfully";
-            } else {
-                $error = "Error: " . $stmt->error;
             }
             $stmt->close();
         }
@@ -96,10 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $editCode = $row['code'];
             $editMobilenum = $row['mobilenum'];
         }
-        $stmt->close();
+        $stmt->close(); 
     }
 }
 ?>
+
+
+
+
+
 
 <!DOCTYPE html>
 <html>
@@ -125,8 +129,9 @@ if (!empty($error)) {
     <label for="mobilenum">Mobile Number:</label>
     <input type="text" id="mobilenum" name="mobilenum" value="<?php echo htmlspecialchars($editMobilenum); ?>" required>
     <br>
-    <input type="submit" name="action" value="Insert">
-    <?php if (!empty($editId)) { ?>
+    <?php if (empty($editId)) { ?>
+        <input type="submit" name="action" value="Insert">
+    <?php } else { ?>
         <input type="submit" name="action" value="Update">
         <!-- <input type="submit" name="action" value="Delete"> -->
     <?php } ?>
