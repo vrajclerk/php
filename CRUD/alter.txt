@@ -1,0 +1,8 @@
+ Modify Member table to include a foreign key reference to Role
+ $sql = "ALTER TABLE Member ADD role_id INT(10), ADD FOREIGN KEY (role_id) REFERENCES Role(id)";
+
+ if ($conn->query($sql) === FALSE) {
+     if ($conn->errno != 1060) { // Ignore error if column already exists
+        die("Error modifying table: " . $conn->error);
+    }
+ }

@@ -21,15 +21,6 @@ $sql = "CREATE TABLE IF NOT EXISTS Role (
 if ($conn->query($sql) === FALSE) {
     die("Error creating table: " . $conn->error);
 }
-// Modify Member table to include a foreign key reference to Role
-// $sql = "ALTER TABLE Member ADD role_id INT(10), ADD FOREIGN KEY (role_id) REFERENCES Role(id)";
-
-// if ($conn->query($sql) === FALSE) {
-//     if ($conn->errno != 1060) { // Ignore error if column already exists
-//         die("Error modifying table: " . $conn->error);
-//     }
-// }
-
 
 // Insert some roles 
 $result = $conn->query("SELECT COUNT(*) as count FROM Role");
@@ -37,12 +28,15 @@ $row = $result->fetch_assoc();
 if ($row['count'] == 0) {
     $conn->query("INSERT INTO Role (role_name) VALUES ('Admin'), ('User'), ('Guest')");
 }
-// Create table if it doesn't exist
+
+// Create Member table if it doesn't exist
 $sql = "CREATE TABLE IF NOT EXISTS Member (
     id INT(10) AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     code VARCHAR(20) NOT NULL UNIQUE,
-    mobilenum VARCHAR(10) NOT NULL
+    mobilenum VARCHAR(10) NOT NULL,
+    role_id INT(10) NOT NULL,
+    FOREIGN KEY (role_id) REFERENCES Role(id)
 )";
 
 if ($conn->query($sql) === FALSE) {
@@ -66,13 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $mobilenum = trim($_POST['mobilenum'] ?? '');
     $role_id = isset($_POST['role_id']) ? intval($_POST['role_id']) : 0;
 
-
     if ($action == 'Insert' || $action == 'Update') {
         // Validate inputs
-        if (empty($name) || empty($code) || empty($mobilenum) || empty($role_id) ) {
-            $error = 'All fields are required.';
-        } elseif (!preg_match('/^[0-9]{10}$/', $mobilenum)) {
-            $error = 'Mobile number must contain only digits and length must be 10.';
+        if (empty($name) || empty($code) || empty($mobilenum) || empty($role_id)) {
+            $error = "<script>alert('All fields are required.');</script>";
+        } elseif (!preg_match('/^\d{10}$/', $mobilenum)) {
+            $error = "<script>alert('Mobile number must contain exactly 10 digits.');</script>";
         } else {
             // Check for duplicate code
             $stmt = $conn->prepare("SELECT id FROM Member WHERE code = ? AND id != ?");
@@ -84,35 +77,45 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $error = "Error: Code '$code' is already in use. Please choose a different code.";
             } else {
                 if ($action == 'Insert') {
-                    $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum,role_id) VALUES (?, ?, ?, ?)");
-                    $stmt->bind_param("sssi", $name, $code, $mobilenum,$role_id);
+                    $stmt = $conn->prepare("INSERT INTO Member (name, code, mobilenum, role_id) VALUES (?, ?, ?, ?)");
+                    $stmt->bind_param("sssi", $name, $code, $mobilenum, $role_id);
                     if ($stmt->execute()) {
-                        $success = 'New record created successfully';
+                        echo "<script>alert('New record created successfully');</script>";
                     } else {
-                        $error = 'Error: ' . $stmt->error;
+                        $error = "<script>alert('Error: " . $stmt->error . "');</script>";
                     }
                 } elseif ($action == 'Update' && $id > 0) {
-                    $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ?,role_id=? WHERE id = ?");
-                    $stmt->bind_param("sssii", $name, $code, $mobilenum, $id,$role_id);
+                    $stmt = $conn->prepare("UPDATE Member SET name = ?, code = ?, mobilenum = ?, role_id = ? WHERE id = ?");
+                    $stmt->bind_param("sssii", $name, $code, $mobilenum, $role_id, $id);
                     if ($stmt->execute()) {
-                        $success = 'Record updated successfully';
+                        echo "<script>alert('Record updated successfully');</script>";
                     } else {
-                        $error = 'Error: ' . $stmt->error;
+                        $error = "<script>alert('Error: " . $stmt->error . "');</script>";
                     }
                 }
             }
             $stmt->close();
         }
+
+        // Preserve form values in case of error
+        $editId = $id;
+        $editName = $name;
+        $editCode = $code;
+        $editMobilenum = $mobilenum;
+        $editRoleId = $role_id;
     } elseif ($action == 'Delete' && $id > 0) {
+        // Debugging: check if delete action and id are received
+        error_log("Delete action initiated for ID: " . $id);
+
+        // Delete member
         $stmt = $conn->prepare("DELETE FROM Member WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
-            $success = 'Record deleted successfully';
+            echo "<script>alert('Record deleted successfully');</script>";
         } else {
-            $error = 'Error: ' . $stmt->error;
+            $error = "<script>alert('Error: " . $stmt->error . "');</script>";
         }
         $stmt->close();
-
     } elseif (isset($_POST['edit_id'])) {
         $editId = intval($_POST['edit_id']);
         $stmt = $conn->prepare("SELECT * FROM Member WHERE id = ?");
@@ -129,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $stmt->close();
     }
 }
+
 // Fetch roles for the dropdown
 $roles = [];
 $result = $conn->query("SELECT id, role_name FROM Role");
@@ -138,12 +142,13 @@ while ($row = $result->fetch_assoc()) {
 ?>
 
 <!DOCTYPE html>
+
 <html>
 <head>
     <title>CRUD Operations</title>
 </head>
 <body>
-
+<!-- <link href="member.css" rel="stylesheet" type="text/css" /> -->
 <h2>Member Form</h2>
 <?php
 if (!empty($error)) {
@@ -165,19 +170,17 @@ if (!empty($error)) {
     <select id="role_id" name="role_id" required>
         <option value="">Select Role</option>
         <?php
-        $roles = $conn->query("SELECT id, role_name FROM Role");
-        while ($role = $roles->fetch_assoc()) {
+        foreach ($roles as $role) {
             $selected = ($role['id'] == $editRoleId) ? "selected" : "";
             echo "<option value='" . htmlspecialchars($role['id']) . "' $selected>" . htmlspecialchars($role['role_name']) . "</option>";
         }
-        ?> -->
+        ?>
     </select>
     <br>
     <?php if (empty($editId)) { ?>
         <input type="submit" name="action" value="Insert">
     <?php } else { ?>
         <input type="submit" name="action" value="Update">
-        <!-- <input type="submit" name="action" value="Delete"> -->
     <?php } ?>
 </form>
 
@@ -187,8 +190,7 @@ if (!empty($error)) {
     <select id="filter_role" name="filter_role" onchange="this.form.submit()">
         <option value="">All Roles</option>
         <?php
-        $roles = $conn->query("SELECT id, role_name FROM Role");
-        while ($role = $roles->fetch_assoc()) {
+        foreach ($roles as $role) {
             $selected = (isset($_GET['filter_role']) && $_GET['filter_role'] == $role['id']) ? "selected" : "";
             echo "<option value='" . htmlspecialchars($role['id']) . "' $selected>" . htmlspecialchars($role['role_name']) . "</option>";
         }
@@ -233,6 +235,9 @@ if (!empty($error)) {
               </td>";
         echo "</tr>";
     }
+   
+// </form>
+
     ?>
 </table>
 
